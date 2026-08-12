@@ -19,21 +19,8 @@
 namespace slang_frontend {
 
 using RTLIL::Cell;
-using RTLIL::IdString;
+using Yosys::IdString;
 using RTLIL::SigSpec;
-
-// A compat util to be removed once we drop 0.59 support
-#if YOSYS_MAJOR == 0 && YOSYS_MINOR < 59
-static IdString id(std::string_view sv)
-{
-	return std::string(sv);
-}
-#else
-static IdString id(std::string_view sv)
-{
-	return sv;
-}
-#endif
 
 std::string RTLILBuilder::new_id(std::string base)
 {
@@ -335,7 +322,7 @@ SigSpec RTLILBuilder::Biop(
 {
 	if (a.is_fully_const() && b.is_fully_const()) {
 #define OP(type)                                                                                   \
-	if (op == ID($##type))                                                                         \
+	if (op == ID::$##type)                                                                         \
 		return RTLIL::const_##type(a.as_const(), b.as_const(), a_signed, b_signed, y_width);
 		OP(add)
 		OP(sub)
@@ -434,7 +421,7 @@ SigSpec RTLILBuilder::Unop(IdString op, SigSpec a, bool a_signed, int y_width)
 {
 	if (a.is_fully_const()) {
 #define OP(type)                                                                                   \
-	if (op == ID($##type))                                                                         \
+	if (op == ID::$##type)                                                                         \
 		return RTLIL::const_##type(a.as_const(), {}, a_signed, false, y_width);
 		OP(pos)
 		OP(neg)
@@ -474,40 +461,37 @@ void RTLILBuilder::add_dual_edge_aldff(const std::string &base_name, RTLIL::SigS
 		RTLIL::SigSpec aload, RTLIL::SigSpec d, RTLIL::SigSpec q, RTLIL::SigSpec ad,
 		bool aload_polarity)
 {
-	RTLIL::Wire *pos_q = canvas->addWire(
-			canvas->uniquify(Yosys::stringf("%s$pos$q", base_name.c_str())), d.size());
+	auto uniq = [&](const char *suffix) {
+		return canvas->uniquify(Yosys::stringf("%s%s", base_name.c_str(), suffix));
+	};
 
-	RTLIL::Wire *neg_q = canvas->addWire(
-			canvas->uniquify(Yosys::stringf("%s$neg$q", base_name.c_str())), d.size());
+	RTLIL::Wire *pos_q = canvas->addWire(uniq("$pos$q"), d.size());
+	RTLIL::Wire *neg_q = canvas->addWire(uniq("$neg$q"), d.size());
 
 	if (aload.is_fully_def() && aload.size() == 1 && aload.as_bool() != aload_polarity) {
-		RTLIL::Cell *pos_ff =
-				canvas->addDff(canvas->uniquify(Yosys::stringf("%s$pos", base_name.c_str())), clk,
-						d, pos_q, /*edge_polarity=*/true);
+		RTLIL::Cell *pos_ff = canvas->addDff(uniq("$pos"), clk,
+				d, pos_q, /*edge_polarity=*/true);
 		bless_cell(pos_ff);
 
 		// Create negedge FF
-		RTLIL::Cell *neg_ff =
-				canvas->addDff(canvas->uniquify(Yosys::stringf("%s$neg", base_name.c_str())), clk,
-						d, neg_q, /*edge_polarity=*/false);
+		RTLIL::Cell *neg_ff = canvas->addDff(uniq("$neg"), clk,
+				d, neg_q, /*edge_polarity=*/false);
 		bless_cell(neg_ff);
 	} else {
-		RTLIL::Cell *pos_ff =
-				canvas->addAldff(canvas->uniquify(Yosys::stringf("%s$pos", base_name.c_str())), clk,
-						aload, d, pos_q, ad,
-						/*clk_polarity=*/true, aload_polarity);
+		RTLIL::Cell *pos_ff = canvas->addAldff(uniq("$pos"), clk,
+				aload, d, pos_q, ad,
+				/*clk_polarity=*/true, aload_polarity);
 		bless_cell(pos_ff);
 
-		RTLIL::Cell *neg_ff =
-				canvas->addAldff(canvas->uniquify(Yosys::stringf("%s$neg", base_name.c_str())), clk,
-						aload, d, neg_q, ad,
-						/*clk_polarity=*/false, aload_polarity);
+		RTLIL::Cell *neg_ff = canvas->addAldff(uniq("$neg"), clk,
+				aload, d, neg_q, ad,
+				/*clk_polarity=*/false, aload_polarity);
 		bless_cell(neg_ff);
 	}
 
 	// behaviour: when clk=0: select neg_q (captures on negedge), when clk=1: select pos_q (captures
 	// on posedge)
-	RTLIL::Cell *mux = canvas->addMux(canvas->uniquify(Yosys::stringf("%s$mux", base_name.c_str())),
+	RTLIL::Cell *mux = canvas->addMux(uniq("$mux"),
 			/*A=*/neg_q, /*B=*/pos_q, /*S=*/clk, /*Y=*/q);
 	bless_cell(mux);
 }
@@ -515,7 +499,7 @@ void RTLILBuilder::add_dual_edge_aldff(const std::string &base_name, RTLIL::SigS
 void RTLILBuilder::add_dff(std::string_view name, const RTLIL::SigSpec &clk,
 		const RTLIL::SigSpec &d, const RTLIL::SigSpec &q, bool clk_polarity)
 {
-	RTLIL::Cell *cell = canvas->addDff(canvas->uniquify(id(name)), clk, d, q, clk_polarity);
+	RTLIL::Cell *cell = canvas->addDff(canvas->uniquify(std::string(name)), clk, d, q, clk_polarity);
 	bless_cell(cell);
 }
 
@@ -529,7 +513,7 @@ void RTLILBuilder::add_dffe(std::string_view name, const RTLIL::SigSpec &clk,
 	}
 
 	RTLIL::Cell *cell =
-			canvas->addDffe(canvas->uniquify(id(name)), clk, en, d, q, clk_polarity, en_polarity);
+			canvas->addDffe(canvas->uniquify(std::string(name)), clk, en, d, q, clk_polarity, en_polarity);
 	bless_cell(cell);
 }
 
@@ -538,7 +522,7 @@ void RTLILBuilder::add_aldff(std::string_view name, const RTLIL::SigSpec &clk,
 		const RTLIL::SigSpec &ad, bool clk_polarity, bool aload_polarity)
 {
 	RTLIL::Cell *cell = canvas->addAldff(
-			canvas->uniquify(id(name)), clk, aload, d, q, ad, clk_polarity, aload_polarity);
+			canvas->uniquify(std::string(name)), clk, aload, d, q, ad, clk_polarity, aload_polarity);
 	bless_cell(cell);
 }
 
@@ -551,7 +535,7 @@ void RTLILBuilder::add_aldffe(std::string_view name, const RTLIL::SigSpec &clk,
 		return add_aldff(name, clk, aload, d, q, ad, clk_polarity, aload_polarity);
 	}
 
-	RTLIL::Cell *cell = canvas->addAldffe(canvas->uniquify(id(name)), clk, en, aload, d, q, ad,
+	RTLIL::Cell *cell = canvas->addAldffe(canvas->uniquify(std::string(name)), clk, en, aload, d, q, ad,
 			clk_polarity, en_polarity, aload_polarity);
 	bless_cell(cell);
 }
@@ -652,7 +636,7 @@ void RTLILBuilder::add_memory_init(
 	if (data.empty())
 		return;
 
-	RTLIL::Memory *mem = canvas->memories.at(id(name));
+	RTLIL::Memory *mem = canvas->memories.at(canvas->design->twines.add(std::string(name)));
 	log_assert(mem);
 
 	uint64_t processed = 0;
@@ -705,13 +689,13 @@ SigSpec RTLILBuilder::add_placeholder_signal(
 		uint64_t width, std::string_view name_suggestion, bool public_name)
 {
 	log_assert(width <= (uint64_t)std::numeric_limits<int>::max());
-	RTLIL::IdString name;
+	std::string name;
 	if (public_name) {
-		name = id(name_suggestion);
+		name = std::string(name_suggestion);
 	} else {
 		name = new_id(std::string(name_suggestion));
 	}
-	RTLIL::Wire *wire = canvas->addWire(name, (int)width);
+	RTLIL::Wire *wire = canvas->addWire(std::move(name), (int)width);
 	wire->attributes = staged_attributes;
 	return wire;
 }

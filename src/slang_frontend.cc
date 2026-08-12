@@ -181,7 +181,7 @@ std::string format_src(const T &obj)
 
 namespace slang_frontend {
 
-const RTLIL::IdString id(const std::string_view &view)
+std::string id(const std::string_view &view)
 {
 	return RTLIL::escape_id(std::string(view));
 }
@@ -207,7 +207,7 @@ uint64_t bitstream_member_offset(const ast::FieldSymbol &member)
 	return bit_offset;
 }
 
-static const RTLIL::IdString module_type_id(const ast::InstanceBodySymbol &sym)
+static std::string module_type_id(const ast::InstanceBodySymbol &sym)
 {
 	ast_invariant(sym, sym.parentInstance && sym.parentInstance->isModule());
 	std::string instance = sym.getHierarchicalPath();
@@ -311,7 +311,7 @@ void transfer_attrs(NetlistContext &netlist, T &from, RTLIL::AttrObject *to)
 
 	for (auto attr : global_compilation->getAttributes(from)) {
 		if (auto value = convert_attr_value(netlist, attr)) {
-			to->attributes[id(attr->name)] = *value;
+			to->attributes[netlist.canvas->design->twines.add(id(attr->name))] = *value;
 		}
 	}
 }
@@ -324,7 +324,7 @@ void transfer_attrs(NetlistContext &netlist, T &from, AttributeGuard &guard)
 
 	for (auto attr : global_compilation->getAttributes(from)) {
 		if (auto value = convert_attr_value(netlist, attr)) {
-			guard.set(id(attr->name), *value);
+			guard.set(netlist.canvas->design->twines.add(id(attr->name)), *value);
 		}
 	}
 }
@@ -491,11 +491,11 @@ std::string format_wchunk(RTLIL::SigChunk chunk)
 {
 	log_assert(chunk.wire != nullptr);
 	if (chunk.width == chunk.wire->width)
-		return chunk.wire->name.c_str();
+		return chunk.wire->name.str();
 	else if (chunk.width)
-		return Yosys::stringf("%s[%d]", chunk.wire->name.c_str(), chunk.offset);
+		return Yosys::stringf("%s[%d]", chunk.wire->name.str(), chunk.offset);
 	else
-		return Yosys::stringf("%s[%d:%d]", chunk.wire->name.c_str(), chunk.offset, chunk.offset + chunk.width);
+		return Yosys::stringf("%s[%d:%d]", chunk.wire->name.str(), chunk.offset, chunk.offset + chunk.width);
 }
 
 const ast::InstanceBodySymbol &get_instance_body(SynthesisSettings &settings, const ast::InstanceSymbol &instance)
@@ -2580,7 +2580,7 @@ public:
 				RTLIL::Memory *m = new RTLIL::Memory;
 				m->set_string_attribute(ID::hdlname, netlist.hdlname(sym));
 				transfer_attrs(netlist, sym, m);
-				m->name = netlist.id(sym);
+				m->name = netlist.canvas->design->twines.add(netlist.id(sym));
 				m->width = sym.getType().getArrayElementType()->getBitstreamWidth();
 				auto range = sym.getType().getFixedRange();
 				m->start_offset = range.lower();
@@ -2589,7 +2589,7 @@ public:
 				netlist.emitted_mems[m->name] = {};
 
 				log_debug("Memory inferred for variable %s (size: %d, width: %d)\n",
-						  log_id(m->name), m->size, m->width);
+						  m->name.unescape(), m->size, m->width);
 			} else {
 				netlist.add_wire(sym);
 			}
@@ -2917,7 +2917,7 @@ public:
 		transfer_attrs(netlist, sym, cell);
 		if (inv_y) {
 			// Invert output signal where needed
-			netlist.canvas->rename(cell->name, id + "_yinv");
+			netlist.canvas->rename(cell->name, netlist.canvas->design->twines.add(id + "_yinv"));
 			auto mid_wire = netlist.add_placeholder_signal(y.size(), id + "_mid", true);
 			auto inv_cell = netlist.canvas->addNot(id, mid_wire, y);
 			cell->setPort(ID::Y, mid_wire);
@@ -3424,7 +3424,7 @@ NetlistContext::NetlistContext(
 		const ast::InstanceSymbol &instance)
 	: settings(settings), compilation(compilation), realm(instance.body), eval(*this)
 {
-	canvas = design->addModule(module_type_id(instance.body));
+	canvas = design->addModule(design->twines.add(module_type_id(instance.body)));
 	transfer_attrs(*this, instance.body.getDefinition(), canvas);
 }
 

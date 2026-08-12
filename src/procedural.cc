@@ -410,7 +410,7 @@ void assign_to_lvalue_with_masking(const ast::AssignmentExpression &assign,
 			ast_unreachable(assign);
 		}
 
-		int portid = context.netlist.emitted_mems[id].num_wr_ports++;
+		int portid = context.netlist.emitted_mems[netlist.canvas->design->twines.add(std::string(id))].num_wr_ports++;
 		cell->setParam(ID::PORTID, portid);
 		std::vector<RTLIL::State> prio_mask(portid, RTLIL::S0);
 		auto &preceding_memwr = context.preceding_memwr;

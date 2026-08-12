@@ -66,11 +66,14 @@ namespace slang {
 
 namespace slang_frontend {
 
+// Constid handles (ID::A and friends) live in the Yosys namespace now.
+using Yosys::ID;
+using Yosys::Twine;
+using Yosys::IdString;
 using Yosys::log;
 using Yosys::log_flush;
 using Yosys::log_error;
 using Yosys::log_warning;
-using Yosys::log_id;
 using Yosys::log_signal;
 using Yosys::ys_debug;
 using Yosys::ceil_log2;
@@ -79,7 +82,6 @@ using Yosys::log_debug;
 #endif
 namespace RTLIL = ::Yosys::RTLIL;
 namespace ast = ::slang::ast;
-namespace ID = ::Yosys::RTLIL::ID;
 
 struct NetlistContext;
 class ProceduralContext;
@@ -360,7 +362,7 @@ struct RTLILBuilder {
 	using SigSpec = RTLIL::SigSpec;
 
 	RTLIL::Module *canvas;
-	Yosys::dict<RTLIL::IdString, RTLIL::Const> staged_attributes;
+	Yosys::dict<IdString, RTLIL::Const> staged_attributes;
 	// Source ranges are kept unformatted until bless_cell() actually emits a
 	// cell; many expression leaves never need an `src` string.
 	slang::SourceRange staged_source_range;
@@ -389,8 +391,8 @@ struct RTLILBuilder {
 	SigSpec Neg(SigSpec a, bool signed_);
 	SigSpec Not(SigSpec a);
 
-	SigSpec Unop(RTLIL::IdString op, SigSpec a, bool a_signed, int y_width);
-	SigSpec Biop(RTLIL::IdString op, SigSpec a, SigSpec b,
+	SigSpec Unop(IdString op, SigSpec a, bool a_signed, int y_width);
+	SigSpec Biop(IdString op, SigSpec a, SigSpec b,
 				 bool a_signed, bool b_signed, int y_width);
 
 	SigSpec CountOnes(SigSpec sig, int result_width);
@@ -452,7 +454,7 @@ public:
 		builder.staged_source_range_valid = save_source_range_valid;
 	}
 
-	void set(RTLIL::IdString id, RTLIL::Const value)
+	void set(IdString id, RTLIL::Const value)
 	{
 		builder.staged_attributes[id] = value;
 	}
@@ -465,7 +467,7 @@ public:
 
 private:
 	RTLILBuilder &builder;
-	Yosys::dict<RTLIL::IdString, RTLIL::Const> save;
+	Yosys::dict<IdString, RTLIL::Const> save;
 	slang::SourceRange save_source_range;
 	bool save_source_range_valid = false;
 };
@@ -562,7 +564,7 @@ struct NetlistContext : RTLILBuilder, public DiagnosticIssuer {
 	struct Memory {
 		int num_wr_ports = 0;
 	};
-	Yosys::dict<RTLIL::IdString, Memory> emitted_mems;
+	Yosys::dict<IdString, Memory> emitted_mems;
 
 	// Used to implement modports on `realm`
 	Yosys::dict<const ast::Scope*, std::string YS_HASH_PTR_OPS> scopes_remap;

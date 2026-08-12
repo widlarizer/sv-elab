@@ -214,7 +214,7 @@ public:
 		default:                                netlist.add_diag(diag::AssertionUnsupported, statement.sourceRange); return;
 		}
 
-		RTLIL::IdString cell_name;
+		std::string cell_name;
 
 		if (containing_block &&
 				unwrap_statement(containing_block->tryGetStatement()) == &statement &&
@@ -225,7 +225,7 @@ public:
 			cell_name = netlist.new_id();
 		}
 
-		auto cell = netlist.canvas->addCell(cell_name, ID($check));
+		auto cell = netlist.canvas->addCell(std::move(cell_name), ID($check));
 
 		context.set_effects_trigger(cell);
 		cell->setParam(ID::FLAVOR, flavor);
