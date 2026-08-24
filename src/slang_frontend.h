@@ -68,7 +68,6 @@ namespace slang_frontend {
 
 // Constid handles (ID::A and friends) live in the Yosys namespace now.
 using Yosys::ID;
-using Yosys::Twine;
 using Yosys::IdString;
 using Yosys::log;
 using Yosys::log_flush;
