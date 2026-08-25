@@ -64,7 +64,7 @@ struct Case
 	std::vector<RTLIL::SigSpec> compare;
 	std::vector<Action> actions;
 	std::vector<Switch *> switches;
-	std::vector<RTLIL::SigSig> aux_actions;
+	std::vector<RTLIL::SyncAction> aux_actions;
 
 	~Case()
 	{
