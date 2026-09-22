@@ -172,10 +172,10 @@ using Yosys::ys_debug;
 using Yosys::log_debug;
 #endif
 #ifndef SLANG_NO_YOSYS
-using Yosys::log_id;
+using Yosys::ID;
+using Yosys::IdString;
 using Yosys::log_signal;
 namespace RTLIL = ::Yosys::RTLIL;
-namespace ID = ::Yosys::RTLIL::ID;
 using RTLIL::escape_id;
 #else
 // log_abort is a macro in this build
@@ -716,7 +716,7 @@ struct NetlistContext : GraphBuilder, public DiagnosticIssuer {
 		int num_wr_ports = 0;
 	};
 #ifndef SLANG_NO_YOSYS
-	Yosys::dict<RTLIL::IdString, Memory> emitted_mems;
+	Yosys::dict<IdString, Memory> emitted_mems;
 #endif
 
 	// Used to implement modports on `realm`, populated in `prepare_interface_ports`

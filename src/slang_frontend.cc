@@ -182,7 +182,7 @@ namespace parsing = slang::parsing;
 namespace slang_frontend {
 
 #ifndef SLANG_NO_YOSYS
-static const RTLIL::IdString rtlil_id(const std::string_view &view)
+static std::string rtlil_id(const std::string_view &view)
 {
 	return RTLIL::escape_id(std::string(view));
 }
@@ -2447,7 +2447,7 @@ public:
 							ast_invariant(port, parent->asSymbol().kind == ast::SymbolKind::Modport);
 							const ast::ModportSymbol &modport = parent->asSymbol().as<ast::ModportSymbol>();
 
-							RTLIL::IdString port_name = modport_prefix \
+							std::string port_name = modport_prefix \
 							 	+ hierpath_relative_to(&static_cast<const ast::Scope&>(modport), port.getParentScope()) \
 							 	+ std::string(".") + std::string(port.name);
 
@@ -2642,19 +2642,17 @@ public:
 
 			if (netlist.is_inferred_memory(sym)) {
 #ifndef SLANG_NO_YOSYS
-				RTLIL::Memory *m = new RTLIL::Memory;
+				RTLIL::Memory *m = netlist.backend->canvas->addMemory(netlist.id(sym));
 				m->set_string_attribute(ID::hdlname, netlist.hdlname(sym));
 				transfer_attrs(netlist, sym, m);
-				m->name = netlist.id(sym);
 				m->width = sym.getType().getArrayElementType()->getBitstreamWidth();
 				auto range = sym.getType().getFixedRange();
 				m->start_offset = range.lower();
 				m->size = range.width();
-				netlist.backend->canvas->memories[m->name] = m;
 				netlist.emitted_mems[m->name] = {};
 
 				log_debug("Memory inferred for variable %s (size: %d, width: %d)\n",
-						  log_id(m->name), m->size, m->width);
+						  m->name.unescape(), m->size, m->width);
 #else
 				// Unreachable: memory inference is disabled under SLANG_NO_YOSYS
 				log_abort();

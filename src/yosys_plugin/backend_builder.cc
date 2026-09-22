@@ -16,20 +16,7 @@
 namespace slang_frontend {
 
 using RTLIL::Cell;
-using RTLIL::IdString;
-
-// A compat util to be removed once we drop 0.59 support
-#if YOSYS_MAJOR == 0 && YOSYS_MINOR < 59
-static IdString id(std::string_view sv)
-{
-	return std::string(sv);
-}
-#else
-static IdString id(std::string_view sv)
-{
-	return sv;
-}
-#endif
+using Yosys::IdString;
 
 std::string BackendGraphBuilder::new_id(std::string base)
 {
@@ -65,7 +52,7 @@ ir::Value BackendGraphBuilder::Demux(ir::Value a, ir::Value s)
 ir::Value BackendGraphBuilder::Mux(ir::Value a, ir::Value b, ir::Net s)
 {
 	auto [id, y] = add_y_wire(a.size());
-	bless_cell(canvas->addMux(id, a, b, {s}, y));
+	bless_cell(canvas->addMux(id, a, b, ir::Value(s), y));
 	return y;
 }
 
@@ -332,7 +319,7 @@ void BackendGraphBuilder::add_dual_edge_aldff(const std::string &base_name, ir::
 void BackendGraphBuilder::add_dff(std::string_view name, const ir::Value &clk, const ir::Value &d,
 		const ir::Value &q, bool clk_polarity)
 {
-	RTLIL::Cell *cell = canvas->addDff(canvas->uniquify(id(name)), clk, d, q, clk_polarity);
+	RTLIL::Cell *cell = canvas->addDff(canvas->uniquify(std::string(name)), clk, d, q, clk_polarity);
 	bless_cell(cell);
 }
 
@@ -340,7 +327,7 @@ void BackendGraphBuilder::add_dffe(std::string_view name, const ir::Value &clk, 
 		const ir::Value &d, const ir::Value &q, bool clk_polarity, bool en_polarity)
 {
 	RTLIL::Cell *cell =
-			canvas->addDffe(canvas->uniquify(id(name)), clk, en, d, q, clk_polarity, en_polarity);
+			canvas->addDffe(canvas->uniquify(std::string(name)), clk, en, d, q, clk_polarity, en_polarity);
 	bless_cell(cell);
 }
 
@@ -349,7 +336,7 @@ void BackendGraphBuilder::add_aldff(std::string_view name, const ir::Value &clk,
 		bool clk_polarity, bool aload_polarity)
 {
 	RTLIL::Cell *cell = canvas->addAldff(
-			canvas->uniquify(id(name)), clk, aload, d, q, ad, clk_polarity, aload_polarity);
+			canvas->uniquify(std::string(name)), clk, aload, d, q, ad, clk_polarity, aload_polarity);
 	bless_cell(cell);
 }
 
@@ -357,7 +344,7 @@ void BackendGraphBuilder::add_aldffe(std::string_view name, const ir::Value &clk
 		const ir::Value &en, const ir::Value &aload, const ir::Value &d, const ir::Value &q,
 		const ir::Value &ad, bool clk_polarity, bool en_polarity, bool aload_polarity)
 {
-	RTLIL::Cell *cell = canvas->addAldffe(canvas->uniquify(id(name)), clk, en, aload, d, q, ad,
+	RTLIL::Cell *cell = canvas->addAldffe(canvas->uniquify(std::string(name)), clk, en, aload, d, q, ad,
 			clk_polarity, en_polarity, aload_polarity);
 	bless_cell(cell);
 }
@@ -403,7 +390,7 @@ void BackendGraphBuilder::add_memory_init(
 	if (data.empty())
 		return;
 
-	RTLIL::Memory *mem = canvas->memories.at(id(name));
+	RTLIL::Memory *mem = canvas->memories.at(canvas->twines().add(std::string(name)));
 	log_assert(mem);
 
 	uint64_t processed = 0;
@@ -456,13 +443,13 @@ ir::Value BackendGraphBuilder::add_placeholder_signal(
 		uint64_t width, std::string_view name_suggestion, bool public_name)
 {
 	log_assert(width <= (uint64_t)std::numeric_limits<int>::max());
-	RTLIL::IdString name;
+	std::string name;
 	if (public_name) {
-		name = id(name_suggestion);
+		name = std::string(name_suggestion);
 	} else {
 		name = new_id(std::string(name_suggestion));
 	}
-	RTLIL::Wire *wire = canvas->addWire(name, (int)width);
+	RTLIL::Wire *wire = canvas->addWire(std::move(name), (int)width);
 	wire->attributes = staged_attributes;
 	return wire;
 }
