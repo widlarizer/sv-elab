@@ -14,7 +14,7 @@ struct BackendGraphBuilder : BackendGraphBuilderBase
 {
 	const slang::SourceManager *source_mgr;
 	RTLIL::Module *canvas = nullptr;
-	Yosys::dict<RTLIL::IdString, RTLIL::Const> staged_attributes;
+	Yosys::dict<RTLIL::LeafIdString, RTLIL::Const> staged_attributes;
 	// Source ranges are kept unformatted until bless_cell() actually emits a
 	// cell; many expression leaves never need an `src` string.
 	slang::SourceRange staged_source_range;
@@ -87,7 +87,7 @@ public:
 		builder.staged_source_range_valid = save_source_range_valid;
 	}
 
-	void set(RTLIL::IdString id, RTLIL::Const value) { builder.staged_attributes[id] = value; }
+	void set(RTLIL::LeafIdString id, RTLIL::Const value) { builder.staged_attributes[id] = value; }
 
 	void set_source(slang::SourceRange source_range)
 	{
@@ -97,7 +97,7 @@ public:
 
 private:
 	BackendGraphBuilder &builder;
-	Yosys::dict<RTLIL::IdString, RTLIL::Const> save;
+	Yosys::dict<RTLIL::LeafIdString, RTLIL::Const> save;
 	slang::SourceRange save_source_range;
 	bool save_source_range_valid = false;
 };
