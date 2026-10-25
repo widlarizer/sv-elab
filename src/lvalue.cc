@@ -91,15 +91,10 @@ std::optional<LValue> LValue::analyze(
 
 		if (context.netlist.is_inferred_memory(ese.value()) &&
 				context.procedural->timing.kind != ProcessTiming::Initial) {
-#ifndef SLANG_NO_YOSYS
 			ir::Value address = context(ese.selector());
 			auto variable =
 					Variable::from_symbol(&ese.value().as<ast::ValueExpressionBase>().symbol);
 			return LValue::memoryWrite(variable, address, ese.type->getBitstreamWidth());
-#else
-			// Unreachable: memory inference is disabled under SLANG_NO_YOSYS
-			assert_invariant(false && "unreachable");
-#endif
 		}
 
 		std::optional<LValue> inner = analyze(context, ese.value());

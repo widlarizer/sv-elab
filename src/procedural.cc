@@ -315,7 +315,35 @@ void ProceduralContext::update_variable_state(slang::SourceLocation loc, Variabl
 		ir::Value rvalue = netlist.Bwmux(rvalue_background, unmasked_rvalue, mask);
 		vstate.set(lvalue, rvalue);
 	}
+
+#ifdef SLANG_MUX_LOWERING
+	if (track_assigned)
+		mark_assigned(lvalue, mask);
+#endif
 }
+
+#ifdef SLANG_MUX_LOWERING
+void ProceduralContext::mark_assigned(VariableBits lvalue, ir::Value mask)
+{
+	VariableBits flags;
+	ir::Value flags_mask;
+	for (auto [base, size, chunk] : lvalue.chunk_spans()) {
+		if (chunk.variable.kind != Variable::Static)
+			continue;
+		flags.append(VariableChunk{Variable::assigned(chunk.variable), chunk.base, size});
+		flags_mask.append(mask.extract(base, size));
+	}
+
+	if (flags.empty())
+		return;
+
+	ir::Value ones(ir::S1, flags.bitwidth());
+	if (flags_mask.is_fully_ones())
+		vstate.set(flags, ones);
+	else
+		vstate.set(flags, netlist.Bwmux(vstate.evaluate(netlist, flags), ones, flags_mask));
+}
+#endif
 
 void ProceduralContext::do_simple_assign(
 		slang::SourceLocation loc, VariableBits lvalue, ir::Value rvalue, bool blocking)

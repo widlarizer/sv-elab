@@ -24,7 +24,7 @@ ir::Net GraphBuilder::ReduceBool(ir::Value a)
 
 	bool seen_x = false, seen_nonconst = false;
 	for (ir::Net bit : a) {
-		if (!bit.is_const())
+		if (!bit.is_const() || bit == ir::Sz)
 			seen_nonconst = true;
 		else if (bit == ir::S1)
 			return ir::S1;

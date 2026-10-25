@@ -25,6 +25,7 @@
 #include <optional>
 #include <stdexcept>
 #include <vector>
+#include <algorithm>
 
 #include "slang/ast/ASTVisitor.h"
 #include "slang/ast/Compilation.h"
@@ -225,12 +226,17 @@ ir::Const NetlistContext::convert_svint(const slang::SVInt &svint,
 {
 	std::vector<ir::Trit> bits;
 	bits.reserve(svint.getBitWidth());
+	bool high_impedance = svint.hasUnknown() && backend->capabilities().high_impedance;
 	for (int i = 0; i < (int) svint.getBitWidth(); i++)
 	switch (svint[i].value) {
 	case 0: bits.push_back(ir::S0); break;
 	case 1: bits.push_back(ir::S1); break;
 	case slang::logic_t::X_VALUE: bits.push_back(ir::Sx); break;
 	case slang::logic_t::Z_VALUE: {
+		if (high_impedance) {
+			bits.push_back(ir::Sz);
+			break;
+		}
 		add_diag(diag::HighImpedanceUnsupported, loc);
 		bits.push_back(ir::Sx); break;
 	}
@@ -377,9 +383,13 @@ namespace slang_frontend {
 #ifndef SLANG_NO_YOSYS
 void ProcessTiming::extract_trigger(NetlistContext &netlist, Yosys::Cell *cell, ir::Net enable)
 {
-	auto &params = cell->parameters;
-
 	cell->setPort(ID::EN, {netlist.LogicAnd(background_enable, enable)});
+	apply_trigger(cell);
+}
+
+void ProcessTiming::apply_trigger(Yosys::Cell *cell) const
+{
+	auto &params = cell->parameters;
 
 	switch (kind) {
 	case Implicit: {
@@ -552,6 +562,8 @@ ir::Value VariableState::evaluate(NetlistContext &netlist, VariableBits vbits)
 			ret.append(ir::Sx);
 		} else if (visible_assignments.count(vbit)) {
 			ret.append(visible_assignments.at(vbit));
+		} else if (vbit.variable.kind == Variable::Assigned) {
+			ret.append(ir::S0);
 		} else {
 			assert_invariant(vbit.variable.kind == Variable::Static);
 			ret.append(netlist.wire(*vbit.variable.get_symbol())[(int)vbit.offset]);
@@ -1791,19 +1803,61 @@ public:
 #endif
 
 		ProceduralContext procedure(netlist, ProcessTiming::implicit);
+#ifdef SLANG_MUX_LOWERING
+		bool latches = netlist.backend->capabilities().latches;
+		procedure.track_assigned = latches;
+#endif
 		body.visit(StatementExecutor(procedure));
 
 		VariableBits all_driven = procedure.all_driven();
 
 #ifdef SLANG_MUX_LOWERING
-		// With mux lowering we emit feedback muxes for latches for now
+		// Without latch support in the backend we emit feedback muxes for latches
 		VariableBits cl;
 		ir::Value cr;
+		std::vector<std::pair<ir::Net, VariableBits>> latch_groups;
+		auto &assignments = procedure.vstate.visible_assignments;
 		for (auto driven_bit : all_driven) {
+			if (latches) {
+				VariableBit flag{Variable::assigned(driven_bit.variable), driven_bit.offset};
+				ir::Net enable = assignments.count(flag) ? assignments.at(flag) : ir::Net(ir::S0);
+				if (enable != ir::S1) {
+					auto group = std::find_if(latch_groups.begin(), latch_groups.end(),
+							[&](auto &entry) { return entry.first == enable; });
+					if (group == latch_groups.end()) {
+						latch_groups.push_back({enable, {}});
+						group = latch_groups.end() - 1;
+					}
+					group->second.append(driven_bit);
+					continue;
+				}
+			}
 			cl.append(driven_bit);
-			cr.append(procedure.vstate.visible_assignments.at(driven_bit));
+			cr.append(assignments.at(driven_bit));
 		}
+
+		if (latches && symbol.procedureKind == ast::ProceduralBlockKind::AlwaysLatch && !cl.empty()) {
+			for (auto chunk : cl.chunks()) {
+				auto &diag = netlist.add_diag(diag::LatchNotInferred, symbol.location);
+				diag << chunk.text();
+			}
+		}
+
 		netlist.add_continuous_driver(cl, cr);
+
+		for (auto &[enable, bits] : latch_groups) {
+			ir::Value d;
+			for (auto bit : bits)
+				d.append(assignments.at(bit));
+			AttributeGuard guard(netlist);
+			transfer_attrs(netlist, symbol, guard);
+			netlist.backend->add_latch(netlist.backend->new_id("latch"), enable, d,
+					netlist.convert_static(bits));
+			for (auto bit : bits) {
+				netlist.driven_variables.insert(bit);
+				netlist.register_driven_variables.insert(bit);
+			}
+		}
 #else
 		hashlib::pool<VariableBit> dangling;
 		if (symbol.procedureKind != ast::ProceduralBlockKind::AlwaysComb) {
@@ -2110,12 +2164,11 @@ public:
 									ast::ImmediateAssertionStatement::isKind(body->kind));
 			if (!netlist.settings.ignore_assertions.value_or(false)) {
 				if (ast::ConcurrentAssertionStatement::isKind(body->kind)) {
-#ifndef SLANG_NO_YOSYS
-					process_freestanding_sva_property(netlist, body->as<ast::ConcurrentAssertionStatement>(),
-													  block_symbol);
-#else
-					netlist.add_diag(diag::AssertionUnsupported, body->sourceRange);
-#endif
+					if (netlist.backend->capabilities().checks)
+						process_freestanding_sva_property(netlist, body->as<ast::ConcurrentAssertionStatement>(),
+														  block_symbol);
+					else
+						netlist.add_diag(diag::AssertionUnsupported, body->sourceRange);
 				} else {
 					ProceduralContext procedure(netlist, ProcessTiming::implicit);
 					symbol.getBody().visit(StatementExecutor(procedure));
@@ -2625,8 +2678,8 @@ public:
 			return;
 		}
 
-#ifndef SLANG_NO_YOSYS
-		if (ast::ConditionalExpression::isKind(expr.right().kind)) {
+		if (ast::ConditionalExpression::isKind(expr.right().kind) &&
+				netlist.backend->capabilities().tristates) {
 			auto &ternary = expr.right().as<ast::ConditionalExpression>();
 			auto lhs_value = ternary.left().eval(netlist.eval.const_);
 			auto rhs_value = ternary.right().eval(netlist.eval.const_);
@@ -2634,22 +2687,19 @@ public:
 			bool rhs_z = rhs_value.isInteger() && (rhs_value.integer().countZs() == rhs_value.integer().getBitWidth());
 
 			if (lhs_z || rhs_z) {
-				auto canvas = netlist.backend->canvas;
 				require(ternary, ternary.conditions.size() == 1);
 				require(ternary, !ternary.conditions[0].pattern);
 				ir::Value enable = netlist.eval(*(ternary.conditions[0].expr));
 				auto lvalue = netlist.eval.lhs(expr.left());
-				auto cell = canvas->addTribuf(netlist.backend->new_id(),
-					(lhs_z ? netlist.eval(ternary.right()) : netlist.eval(ternary.left())).raw(),
-					(lhs_z ? netlist.LogicNot(enable) : netlist.ReduceBool(enable)).raw(),
-					netlist.convert_static(lvalue)
-				);
+				ir::Net active = lhs_z ? netlist.LogicNot(enable) : netlist.ReduceBool(enable);
+				ir::Value data = lhs_z ? netlist.eval(ternary.right()) : netlist.eval(ternary.left());
+				AttributeGuard guard(netlist);
+				transfer_attrs(netlist, symbol, guard);
+				netlist.backend->add_tristate(netlist.convert_static(lvalue), data, active);
 				netlist.register_driven(lvalue);
-				transfer_attrs(netlist, symbol, cell);
 				return;
 			}
 		}
-#endif
 
 		ir::Value rvalue = netlist.eval(expr.right());
 		netlist.add_continuous_driver(netlist.eval.lhs(expr.left()), rvalue);
@@ -2753,13 +2803,10 @@ public:
 	void handle(const ast::InstanceBodySymbol &body)
 	{
 		if (&body == &netlist.realm) {
-#ifndef SLANG_NO_YOSYS
 			// This is the containing instance body for this netlist;
-			// find inferred memories. Without Yosys there is no memory
-			// lowering, so nothing is ever inferred as a memory and the
-			// memory read/write handling stays unreachable.
-			detect_memories(body);
-#endif
+			// find inferred memories if the backend lowers them
+			if (netlist.backend->capabilities().memories)
+				detect_memories(body);
 			// add all internal wires before we enter the body
 			add_internal_wires(body);
 			// Evaluate inline initializers on variables

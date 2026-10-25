@@ -9,7 +9,9 @@
 #include <optional>
 #include "slang/ast/statements/MiscStatements.h"
 #include "slang/ast/SemanticFacts.h"
+#ifndef SLANG_NO_YOSYS
 #include "kernel/rtlil.h"
+#endif
 #include "slang/ast/expressions/AssertionExpr.h"
 #include "slang/ast/symbols/BlockSymbols.h"
 #include "slang/text/SourceLocation.h"
@@ -65,11 +67,12 @@ void process_sva_property(const ast::ConcurrentAssertionStatement &statement,
 		return;
 	}
 
-	std::string flavor;
+	using CheckKind = BackendGraphBuilderBase::CheckKind;
+	CheckKind kind;
 	switch (statement.assertionKind) {
-	case ast::AssertionKind::Assert:        flavor = "assert"; break;
-	case ast::AssertionKind::Assume:        flavor = "assume"; break;
-	case ast::AssertionKind::CoverProperty: flavor = "cover"; break;
+	case ast::AssertionKind::Assert:        kind = CheckKind::Assert; break;
+	case ast::AssertionKind::Assume:        kind = CheckKind::Assume; break;
+	case ast::AssertionKind::CoverProperty: kind = CheckKind::Cover; break;
 	default:                                netlist.add_diag(diag::AssertionUnsupported, statement.sourceRange); return;
 	}
 
@@ -84,15 +87,12 @@ void process_sva_property(const ast::ConcurrentAssertionStatement &statement,
 
 	ir::Net a = netlist.ReduceBool(procedural.eval.sva(simple_assertion.expr));
 
-	auto cell = netlist.backend->canvas->addCell(std::move(cell_name), ID($check));
-	procedural.set_effects_trigger(cell);
-	cell->setParam(ID::FLAVOR, flavor);
-	cell->setParam(ID::FORMAT, std::string(""));
-	cell->setParam(ID::ARGS_WIDTH, 0);
-	cell->setParam(ID::PRIORITY, --procedural.effects_priority);
-	cell->setPort(ID::ARGS, {});
-	cell->setPort(ID::A, {a});
-	transfer_attrs(netlist, statement, cell);
+	ir::Net case_enable = procedural.case_enable();
+	ir::Net enable = netlist.LogicAnd(procedural.timing.background_enable, case_enable);
+	int priority = --procedural.effects_priority;
+	AttributeGuard attributes(netlist);
+	transfer_attrs(netlist, statement, attributes);
+	netlist.backend->add_check(cell_name, kind, a, enable, procedural.timing, priority);
 }
 
 void process_freestanding_sva_property(NetlistContext &netlist,
@@ -141,20 +141,24 @@ void process_freestanding_sva_property(NetlistContext &netlist,
 		ProceduralContext procedure(netlist, timing);
 		process_sva_property(statement, block, procedure, clocking_expr.expr);
 
+#ifndef SLANG_NO_YOSYS
 		RTLIL::Process *rtlil_proc = netlist.backend->canvas->addProcess(netlist.backend->new_id());
 		transfer_attrs(netlist, statement, rtlil_proc);
 #ifndef SLANG_MUX_LOWERING
 		procedure.copy_case_tree_into(rtlil_proc->root_case);
+#endif
 #endif
 	} else {
 		// No clocking
 		ProceduralContext procedure(netlist, ProcessTiming::implicit);
 		process_sva_property(statement, block, procedure, spec);
 
+#ifndef SLANG_NO_YOSYS
 		RTLIL::Process *rtlil_proc = netlist.backend->canvas->addProcess(netlist.backend->new_id());
 		transfer_attrs(netlist, statement, rtlil_proc);
 #ifndef SLANG_MUX_LOWERING
 		procedure.copy_case_tree_into(rtlil_proc->root_case);
+#endif
 #endif
 	}
 }

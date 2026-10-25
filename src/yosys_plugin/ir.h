@@ -31,6 +31,7 @@ struct Trit
 inline constexpr Trit S0{RTLIL::S0};
 inline constexpr Trit S1{RTLIL::S1};
 inline constexpr Trit Sx{RTLIL::Sx};
+inline constexpr Trit Sz{RTLIL::Sz};
 
 // Multi-bit constant value
 class Const

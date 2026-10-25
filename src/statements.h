@@ -248,7 +248,8 @@ struct SwitchHelper
 		ir::Value bmux_a;
 
 		if (full_case)
-			bmux_a = ir::Value(ir::Sx, background.width() << width);
+			bmux_a = ir::Value(chunk.variable.kind == Variable::Assigned ? ir::S1 : ir::Sx,
+					background.width() << width);
 		else
 			bmux_a = background.repeat(1 << width);
 
@@ -332,7 +333,8 @@ struct SwitchHelper
 		hashlib::pool<Variable> eos_variables;
 		auto &va = vstate.visible_assignments;
 		for (auto bit : updated_anybranch)
-			if (bit.variable.kind != Variable::Static && !va.count(bit))
+			if (bit.variable.kind != Variable::Static && bit.variable.kind != Variable::Assigned &&
+					!va.count(bit))
 				eos_variables.insert(bit.variable);
 
 		ir::Value background;
@@ -345,7 +347,8 @@ struct SwitchHelper
 			}
 			background.append(vstate.evaluate(netlist, chunk));
 			if (full_case)
-				vstate.set(chunk, ir::Value(ir::Sx, chunk.bitwidth()));
+				vstate.set(chunk, ir::Value(chunk.variable.kind == Variable::Assigned ? ir::S1 : ir::Sx,
+										  chunk.bitwidth()));
 		}
 
 		if (detect_bmux_criteria()) {
@@ -579,15 +582,20 @@ public:
 		if (netlist.settings.ignore_assertions.value_or(false))
 			return;
 
-		std::string flavor;
+		using CheckKind = BackendGraphBuilderBase::CheckKind;
+		CheckKind kind;
 		switch (statement.assertionKind) {
-		case ast::AssertionKind::Assert:        flavor = "assert"; break;
-		case ast::AssertionKind::Assume:        flavor = "assume"; break;
-		case ast::AssertionKind::CoverProperty: flavor = "cover"; break;
+		case ast::AssertionKind::Assert:        kind = CheckKind::Assert; break;
+		case ast::AssertionKind::Assume:        kind = CheckKind::Assume; break;
+		case ast::AssertionKind::CoverProperty: kind = CheckKind::Cover; break;
 		default: netlist.add_diag(diag::AssertionUnsupported, statement.sourceRange); return;
 		}
 
-#ifndef SLANG_NO_YOSYS
+		if (!netlist.backend->capabilities().checks) {
+			netlist.add_diag(diag::AssertionUnsupported, statement.sourceRange);
+			return;
+		}
+
 		std::string cell_name;
 
 		if (containing_block &&
@@ -599,20 +607,13 @@ public:
 			cell_name = netlist.backend->new_id();
 		}
 
-		auto cell = netlist.backend->canvas->addCell(std::move(cell_name), ID($check));
-
-		context.set_effects_trigger(cell);
-		cell->setParam(ID::FLAVOR, flavor);
-		cell->setParam(ID::FORMAT, std::string(""));
-		cell->setParam(ID::ARGS_WIDTH, 0);
-		cell->setParam(ID::PRIORITY, --context.effects_priority);
-		cell->setPort(ID::ARGS, {});
-		cell->setPort(ID::A, {netlist.ReduceBool(eval(statement.cond))});
-		transfer_attrs(netlist, statement, cell);
-#else
-		// TODO(dummy): lower $check through the backend-agnostic interface
-		netlist.add_diag(diag::AssertionUnsupported, statement.sourceRange);
-#endif
+		ir::Net case_enable = context.case_enable();
+		ir::Net enable = netlist.LogicAnd(context.timing.background_enable, case_enable);
+		int priority = --context.effects_priority;
+		ir::Net a = netlist.ReduceBool(eval(statement.cond));
+		AttributeGuard guard(netlist);
+		transfer_attrs(netlist, statement, guard);
+		netlist.backend->add_check(cell_name, kind, a, enable, context.timing, priority);
 	}
 
 	void handle(const ast::ConcurrentAssertionStatement &statement)
@@ -620,12 +621,10 @@ public:
 		if (!netlist.settings.ignore_assertions.value_or(false)) {
 			if (statement.assertionKind == ast::AssertionKind::Expect) {
 				netlist.add_diag(diag::ExpectStatementUnsupported, statement.sourceRange);
-			} else {
-#ifndef SLANG_NO_YOSYS
+			} else if (netlist.backend->capabilities().checks) {
 				process_sva_property(statement, containing_block, context, statement.propertySpec);
-#else
+			} else {
 				netlist.add_diag(diag::AssertionUnsupported, statement.sourceRange);
-#endif
 			}
 		}
 	}

@@ -43,6 +43,12 @@ Variable Variable::escape_flag(int id)
 	return var;
 }
 
+Variable Variable::assigned(const Variable &variable)
+{
+	assert(variable.kind == Static);
+	return Variable(Assigned, variable.symbol, 0);
+}
+
 Variable Variable::dummy(uint64_t width)
 {
 	Variable var;
@@ -162,7 +168,7 @@ bool Variable::operator<(const Variable &other) const
 {
 	if (kind != other.kind)
 		return kind < other.kind;
-	if (kind == Local || kind == Static) {
+	if (kind == Local || kind == Static || kind == Assigned) {
 		if (symbol != other.symbol) {
 			// Find ordering among the symbols
 			if (symbol->getParentScope() != other.symbol->getParentScope())
@@ -185,7 +191,8 @@ Variable::HashLabel Variable::hash_label() const
 	uint64_t num = depth;
 	switch (kind) {
 	case Static:
-	case Local:      ptr = (void *)symbol; break;
+	case Local:
+	case Assigned:   ptr = (void *)symbol; break;
 	case EscapeFlag: num = id; break;
 	case Dummy:      num = width; break;
 	default:         assert_invariant(false && "unreachable");
@@ -207,7 +214,8 @@ uint64_t Variable::bitwidth() const
 {
 	switch (kind) {
 	case Static:
-	case Local:      return symbol->getType().getBitstreamWidth();
+	case Local:
+	case Assigned:   return symbol->getType().getBitstreamWidth();
 	case EscapeFlag: return 1;
 	case Dummy:      return width;
 	default:         assert_invariant(false && "unreachable");
@@ -227,6 +235,7 @@ std::string Variable::text() const
 		return "(local " + get_symbol()->getHierarchicalPath() + " at nest level " +
 			   std::to_string(depth) + ")";
 	case EscapeFlag: return "flag#" + std::to_string(id);
+	case Assigned:   return "(assigned " + symbol->getHierarchicalPath() + ")";
 	case Dummy:      return "dummy(" + std::to_string(width) + ")";
 	default:         assert_invariant(false && "unreachable");
 	}

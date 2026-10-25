@@ -372,6 +372,43 @@ void BackendGraphBuilder::instantiate_blackbox(std::string_view cell_type, std::
 	bless_object(cell);
 }
 
+BackendGraphBuilderBase::Capabilities BackendGraphBuilder::capabilities()
+{
+	Capabilities caps;
+	caps.memories = true;
+	caps.tristates = true;
+	caps.checks = true;
+	return caps;
+}
+
+void BackendGraphBuilder::add_tristate(const ir::Value &target, const ir::Value &data, ir::Net enable)
+{
+	RTLIL::Cell *cell = canvas->addTribuf(new_id(), data.raw(), enable.raw(), target);
+	bless_object(cell);
+}
+
+void BackendGraphBuilder::add_check(std::string_view name, CheckKind kind, ir::Net a,
+		ir::Net enable, const ProcessTiming &timing, int priority)
+{
+	std::string flavor;
+	switch (kind) {
+	case CheckKind::Assert: flavor = "assert"; break;
+	case CheckKind::Assume: flavor = "assume"; break;
+	case CheckKind::Cover:  flavor = "cover"; break;
+	}
+
+	Cell *cell = canvas->addCell(std::string(name), ID($check));
+	cell->setPort(ID::EN, {enable});
+	timing.apply_trigger(cell);
+	cell->setParam(ID::FLAVOR, flavor);
+	cell->setParam(ID::FORMAT, std::string(""));
+	cell->setParam(ID::ARGS_WIDTH, 0);
+	cell->setParam(ID::PRIORITY, priority);
+	cell->setPort(ID::ARGS, {});
+	cell->setPort(ID::A, {a});
+	bless_object(cell);
+}
+
 class BackendMemory : public ir::Memory
 {
 public:

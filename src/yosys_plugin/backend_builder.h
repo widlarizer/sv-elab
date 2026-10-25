@@ -60,6 +60,11 @@ struct BackendGraphBuilder : BackendGraphBuilderBase
 			std::span<PortConnection> port_connections,
 			std::span<ParameterValue> param_values) override;
 
+	Capabilities capabilities() override;
+	void add_tristate(const ir::Value &target, const ir::Value &data, ir::Net enable) override;
+	void add_check(std::string_view name, CheckKind kind, ir::Net a, ir::Net enable,
+			const ProcessTiming &timing, int priority) override;
+
 	std::unique_ptr<BackendGraphBuilder> start_new_graph(std::string_view graph_name);
 	void finalize();
 

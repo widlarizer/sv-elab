@@ -152,12 +152,16 @@ public:
 		Local,
 		EscapeFlag,
 		Dummy,
+		// Per bit of a static variable, whether a combinational procedure
+		// has assigned it on the current path (latch inference)
+		Assigned,
 		Invalid
 	} kind;
 
 	static Variable from_symbol(const ast::ValueSymbol *symbol, int depth=-1);
 	static Variable escape_flag(int id);
 	static Variable dummy(uint64_t width);
+	static Variable assigned(const Variable &variable);
 
 	Variable();
 	const ast::ValueSymbol *get_symbol() const;
@@ -287,6 +291,7 @@ struct ProcessTiming {
 
 #ifndef SLANG_NO_YOSYS
 	void extract_trigger(NetlistContext &netlist, Yosys::Cell *cell, ir::Net enable);
+	void apply_trigger(Yosys::Cell *cell) const;
 #endif
 
 	static ProcessTiming implicit;
@@ -314,6 +319,12 @@ public:
 	Case *current_case;
 #else
 	ir::Net enabled = ir::S1;
+#endif
+
+#ifdef SLANG_MUX_LOWERING
+	// Track Variable::Assigned for the static variables this procedure assigns
+	bool track_assigned = false;
+	void mark_assigned(VariableBits lvalue, ir::Value mask);
 #endif
 
 	// only used when timing.kind==ProcessTiming::Initial
@@ -428,6 +439,23 @@ private:
 struct BackendGraphBuilderBase {
 	virtual ~BackendGraphBuilderBase() = default;
 
+	// Optional parts of the interface. A backend that sets a capability
+	// receives the corresponding calls; otherwise the frontend uses its
+	// generic lowering and never makes them.
+	struct Capabilities {
+		// memories are inferred and lowered through add_memory and the port calls
+		bool memories = false;
+		// `z` bits stay ir::Sz instead of becoming ir::Sx
+		bool high_impedance = false;
+		// conditional `z` drivers of continuous assignments become add_tristate
+		bool tristates = false;
+		// variables a combinational procedure does not always assign become add_latch
+		bool latches = false;
+		// assertions, assumptions and covers become add_check
+		bool checks = false;
+	};
+	virtual Capabilities capabilities() { return {}; }
+
 	// Emits a node for SystemVerilog unary operator
 	virtual ir::Value Unop(ast::UnaryOperator op, ir::Value a, bool a_signed, uint64_t y_width) = 0;
 
@@ -527,6 +555,30 @@ struct BackendGraphBuilderBase {
 				   const ir::Net aload,
 				   const ir::Value &d, const ir::Value &q, const ir::Value &ad,
 				   bool clk_polarity = true, bool en_polarity = true, bool aload_polarity = true) = 0;
+
+	// Drive `target`, composed of placeholder bits, with `data` while `enable`
+	// is 1 and leave it undriven otherwise (Capabilities::tristates)
+	virtual void add_tristate(const ir::Value &target, const ir::Value &data, ir::Net enable)
+	{
+		(void)target; (void)data; (void)enable;
+	}
+
+	// A latch transparent while `enable` is 1: `q` follows `d` then and holds
+	// otherwise (Capabilities::latches)
+	virtual void add_latch(std::string_view name, ir::Net enable, const ir::Value &d,
+						   const ir::Value &q)
+	{
+		(void)name; (void)enable; (void)d; (void)q;
+	}
+
+	// An immediate or single-cycle property: `a` is checked when `enable` is 1
+	// at the instants `timing` describes (Capabilities::checks)
+	enum class CheckKind { Assert, Assume, Cover };
+	virtual void add_check(std::string_view name, CheckKind kind, ir::Net a, ir::Net enable,
+						   const ProcessTiming &timing, int priority)
+	{
+		(void)name; (void)kind; (void)a; (void)enable; (void)timing; (void)priority;
+	}
 };
 
 struct BackendGraphBuilder;
