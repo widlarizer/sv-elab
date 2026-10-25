@@ -276,13 +276,15 @@ void TimingPatternInterpretor::interpret_async_pattern(const ast::ProceduralBloc
 		}
 	}
 
+	// Without an else the remaining edge assigns nothing, so the variables hold
+	std::optional<ast::EmptyStatement> missing_else;
+
 	// Keep inferring asynchronous loads until we get to a single remaining edge trigger
 	while (triggers.size() > 1) {
 		if (stmt->kind != ast::StatementKind::Conditional ||
 				stmt->as<ast::ConditionalStatement>().check != ast::UniquePriorityCheck::None ||
 				stmt->as<ast::ConditionalStatement>().conditions.size() != 1 ||
-				stmt->as<ast::ConditionalStatement>().conditions[0].pattern ||
-				!stmt->as<ast::ConditionalStatement>().ifFalse) {
+				stmt->as<ast::ConditionalStatement>().conditions[0].pattern) {
 			auto &diag = issuer.add_diag(diag::ExpectingIfElseAload, stmt->sourceRange);
 			diag.addNote(diag::NoteDuplicateEdgeSense, timed.timing.sourceRange);
 			return;
@@ -314,7 +316,12 @@ void TimingPatternInterpretor::interpret_async_pattern(const ast::ProceduralBloc
 
 				found_async.push_back({condition->signal, condition->polarity, cond_stmt.ifTrue});
 				triggers.erase(found);
-				stmt = cond_stmt.ifFalse;
+				if (cond_stmt.ifFalse) {
+					stmt = cond_stmt.ifFalse;
+				} else {
+					missing_else.emplace(cond_stmt.sourceRange);
+					stmt = &*missing_else;
+				}
 				continue;
 			}
 		}

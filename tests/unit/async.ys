@@ -433,3 +433,42 @@ async2sync
 equiv_make async_rstonly_gold async_rstonly_gate async_rstonly_equiv
 equiv_induct async_rstonly_equiv
 equiv_status -assert
+
+design -reset
+read_slang <<EOF
+module async_noelse_gate(input logic clk, input logic rst, input logic en,
+					input logic [3:0] d, output logic [3:0] q, output logic [3:0] r,
+					output logic [3:0] s);
+	always_ff @(posedge clk, posedge en)
+		if (en)
+			q <= d;
+	always_ff @(posedge clk, posedge rst)
+		if (rst)
+			r <= 4'h9;
+	always_ff @(posedge clk, negedge en)
+		if (!en)
+			s <= d;
+endmodule
+EOF
+
+read_verilog <<EOF
+module async_noelse_gold(input clk, input rst, input en,
+					input [3:0] d, output reg [3:0] q, output reg [3:0] r,
+					output reg [3:0] s);
+	always @(posedge clk, posedge en)
+		if (en)
+			q <= d;
+	always @(posedge clk, posedge rst)
+		if (rst)
+			r <= 4'h9;
+	always @(posedge clk, negedge en)
+		if (!en)
+			s <= d;
+endmodule
+EOF
+
+proc
+async2sync
+equiv_make async_noelse_gold async_noelse_gate async_noelse_equiv
+equiv_induct async_noelse_equiv
+equiv_status -assert
