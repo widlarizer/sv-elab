@@ -8,6 +8,7 @@
 
 #include "diag.h"
 #include <cstddef>
+#include <exception>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -68,6 +69,9 @@ struct SwitchHelper
 
 	~SwitchHelper()
 	{
+		// a backend may abort the elaboration by throwing from any call
+		if (std::uncaught_exceptions())
+			return;
 		assert_invariant(!current_case_info.has_value());
 		assert_invariant(branch_updates.empty() || finished);
 	}
@@ -420,6 +424,8 @@ struct SwitchHelper
 
 	~SwitchHelper()
 	{
+		if (std::uncaught_exceptions())
+			return;
 		assert_invariant(!entered);
 		assert_invariant(branch_updates.empty() || finished);
 	}

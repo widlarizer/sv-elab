@@ -578,6 +578,8 @@ ir::Value VariableState::evaluate(NetlistContext &netlist, VariableChunk vchunk)
 	for (uint64_t i = 0; i < vchunk.bitwidth(); i++) {
 		if (visible_assignments.count(vchunk[i])) {
 			ret.append(visible_assignments.at(vchunk[i]));
+		} else if (vchunk.variable.kind == Variable::Assigned) {
+			ret.append(ir::S0);
 		} else {
 			assert_invariant(vchunk.variable.kind == Variable::Static);
 			ret.append(netlist.wire(*vchunk.variable.get_symbol())[(int)(vchunk.base + i)]);
@@ -2396,8 +2398,9 @@ public:
 						auto converted = netlist.convert_const(symbol.getValue(), symbol.location);
 						if (converted) {
 							params.push_back({std::string(symbol.name), *converted,
-									symbol.isImplicitString(
-											slang::SourceRange(sym.location, sym.location)) &&
+									(symbol.isImplicitString(
+											 slang::SourceRange(sym.location, sym.location)) ||
+											symbol.getValue().isString()) &&
 											converted->size() % 8 == 0});
 						}
 					},

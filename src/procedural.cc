@@ -17,6 +17,7 @@
 #include "slang/ast/symbols/VariableSymbols.h"
 #include "slang/ast/types/Type.h"
 #include <cstdint>
+#include <exception>
 #include <string>
 
 #include "backend_builder.h"
@@ -523,7 +524,8 @@ UnrollLimitTracking::UnrollLimitTracking(NetlistContext &netlist, int limit)
 
 UnrollLimitTracking::~UnrollLimitTracking()
 {
-	assert_invariant(!unrolling);
+	if (!std::uncaught_exceptions())
+		assert_invariant(!unrolling);
 }
 
 void UnrollLimitTracking::enter_unrolling()
