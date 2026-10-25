@@ -490,4 +490,26 @@ void GraphBuilder::add_aldffe(std::string_view name, const ir::Net clk, const ir
 	backend->add_aldffe(name, clk, en, aload, d, q, ad, clk_polarity, en_polarity, aload_polarity);
 }
 
+void BackendGraphBuilderBase::add_tristate(const ir::Value &, const ir::Value &, ir::Net)
+{
+	error_(__FILE__, __LINE__, "a backend with Capabilities::tristates overrides add_tristate");
+}
+
+void BackendGraphBuilderBase::add_latch(std::string_view, ir::Net, const ir::Value &,
+		const ir::Value &)
+{
+	error_(__FILE__, __LINE__, "a backend with Capabilities::latches overrides add_latch");
+}
+
+void BackendGraphBuilderBase::add_check(std::string_view, CheckKind, ir::Net, ir::Net,
+		const ProcessTiming &, int)
+{
+	error_(__FILE__, __LINE__, "a backend with Capabilities::checks overrides add_check");
+}
+
+void BackendGraphBuilderBase::add_print(std::string_view, ir::Net, const ProcessTiming &, int)
+{
+	error_(__FILE__, __LINE__, "a backend with Capabilities::prints overrides add_print");
+}
+
 }; // namespace slang_frontend

@@ -5,6 +5,7 @@
 // Distributed under the terms of the ISC license, see LICENSE
 //
 // clang-format off
+#include <exception>
 #include <string>
 #include <optional>
 #include "slang/ast/statements/MiscStatements.h"
@@ -41,6 +42,9 @@ void process_sva_property(const ast::ConcurrentAssertionStatement &statement,
 	// by set_effects_trigger
 	std::optional<SwitchHelper> switch_;
 	auto guard = slang::ScopeGuard([&] {
+		// a backend may abort the elaboration by throwing from any call
+		if (std::uncaught_exceptions())
+			return;
 		if (switch_.has_value()) {
 			switch_->exit_branch();
 			switch_->finish(netlist);

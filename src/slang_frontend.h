@@ -453,6 +453,12 @@ struct BackendGraphBuilderBase {
 		bool latches = false;
 		// assertions, assumptions and covers become add_check
 		bool checks = false;
+		// without Yosys, $display and $write become add_print instead of
+		// being dropped
+		bool prints = false;
+		// instantiate_blackbox gets every port of the definition, also
+		// the ones the instance leaves unconnected
+		bool blackbox_ports = false;
 	};
 	virtual Capabilities capabilities() { return {}; }
 
@@ -519,6 +525,11 @@ struct BackendGraphBuilderBase {
 		std::string_view name;
 		enum Direction { kInput, kOutput, kInOut } direction;
 		ir::Value value;
+
+		// False for a port the instance leaves unconnected, passed with
+		// Capabilities::blackbox_ports; its value is then `z` bits of the
+		// port's width
+		bool connected = true;
 	};
 
 	struct ParameterValue {
@@ -556,29 +567,30 @@ struct BackendGraphBuilderBase {
 				   const ir::Value &d, const ir::Value &q, const ir::Value &ad,
 				   bool clk_polarity = true, bool en_polarity = true, bool aload_polarity = true) = 0;
 
+	// The calls of the capabilities below abort the elaboration with an
+	// internal error unless the backend that declares the capability
+	// overrides them.
+
 	// Drive `target`, composed of placeholder bits, with `data` while `enable`
 	// is 1 and leave it undriven otherwise (Capabilities::tristates)
-	virtual void add_tristate(const ir::Value &target, const ir::Value &data, ir::Net enable)
-	{
-		(void)target; (void)data; (void)enable;
-	}
+	virtual void add_tristate(const ir::Value &target, const ir::Value &data, ir::Net enable);
 
 	// A latch transparent while `enable` is 1: `q` follows `d` then and holds
 	// otherwise (Capabilities::latches)
 	virtual void add_latch(std::string_view name, ir::Net enable, const ir::Value &d,
-						   const ir::Value &q)
-	{
-		(void)name; (void)enable; (void)d; (void)q;
-	}
+						   const ir::Value &q);
 
 	// An immediate or single-cycle property: `a` is checked when `enable` is 1
 	// at the instants `timing` describes (Capabilities::checks)
 	enum class CheckKind { Assert, Assume, Cover };
 	virtual void add_check(std::string_view name, CheckKind kind, ir::Net a, ir::Net enable,
-						   const ProcessTiming &timing, int priority)
-	{
-		(void)name; (void)kind; (void)a; (void)enable; (void)timing; (void)priority;
-	}
+						   const ProcessTiming &timing, int priority);
+
+	// A $display or $write named `task`, printed when `enable` is 1 at the
+	// instants `timing` describes; its format and arguments are not
+	// evaluated (Capabilities::prints)
+	virtual void add_print(std::string_view task, ir::Net enable, const ProcessTiming &timing,
+						   int priority);
 };
 
 struct BackendGraphBuilder;

@@ -79,6 +79,33 @@ set(ALL_TESTS
     various/synthesis_define.ys
 )
 
+# A backend without Yosys, built from the common sources (plain_backend/test.sh)
+add_executable(plain-backend
+    plain_backend/backend.cc
+    plain_backend/main.cc
+    ${SV_ELAB_COMMON_PATHS}
+)
+target_compile_definitions(plain-backend PRIVATE SLANG_NO_YOSYS SLANG_MUX_LOWERING)
+target_include_directories(plain-backend PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/plain_backend
+    ${CMAKE_SOURCE_DIR}/src/plain
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/third_party/hashlib
+    ${CMAKE_BINARY_DIR}/src
+)
+target_link_libraries(plain-backend PRIVATE slang::slang)
+target_compile_options(plain-backend PRIVATE
+    -Wall
+    -Wextra
+    -Werror=unused-variable
+    -Werror=unused-parameter
+    -Werror=unused-function
+)
+add_test(
+    NAME plain_backend
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/plain_backend/test.sh $<TARGET_FILE:plain-backend>
+)
+
 foreach(test_script ${ALL_TESTS})
     set(test_fullpath ${CMAKE_CURRENT_SOURCE_DIR}/${test_script})
     get_filename_component(test_dir ${test_fullpath} DIRECTORY)

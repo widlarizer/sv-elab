@@ -1225,7 +1225,7 @@ void handle_readmem(ProceduralContext &context, const ast::CallExpression &call)
 }
 // clang-format off
 
-void handle_display([[maybe_unused]] ProceduralContext &context, [[maybe_unused]] const ast::CallExpression &call)
+void handle_display(ProceduralContext &context, const ast::CallExpression &call)
 {
 #ifndef SLANG_NO_YOSYS
 	NetlistContext &netlist = context.netlist;
@@ -1271,6 +1271,15 @@ void handle_display([[maybe_unused]] ProceduralContext &context, [[maybe_unused]
 	if (call.getSubroutineName() == "$display")
 		fmt.append_literal("\n");
 	fmt.emit_rtlil(cell);
+#else
+	NetlistContext &netlist = context.netlist;
+	if (!netlist.backend->capabilities().prints)
+		return;
+	ir::Net enable = netlist.LogicAnd(context.timing.background_enable, context.case_enable());
+	int priority = --context.effects_priority;
+	AttributeGuard guard(netlist);
+	transfer_attrs(netlist, call, guard);
+	netlist.backend->add_print(call.getSubroutineName(), enable, context.timing, priority);
 #endif
 }
 
@@ -2359,8 +2368,29 @@ public:
 				}
 				case ast::SymbolKind::Port: {
 					auto &port = conn->port.as<ast::PortSymbol>();
-					if (!conn->getExpression())
+					if (!conn->getExpression()) {
+						if (!netlist.backend->capabilities().blackbox_ports)
+							continue;
+						BackendGraphBuilderBase::PortConnection unconnected{conn->port.name,
+								BackendGraphBuilderBase::PortConnection::kInput,
+								ir::Value(ir::Sz, port.getType().getBitstreamWidth()), false};
+						switch (port.direction) {
+						case ast::ArgumentDirection::In: break;
+						case ast::ArgumentDirection::Out:
+							unconnected.direction = BackendGraphBuilderBase::PortConnection::kOutput;
+							break;
+						case ast::ArgumentDirection::InOut:
+							unconnected.direction = BackendGraphBuilderBase::PortConnection::kInOut;
+							break;
+						case ast::ArgumentDirection::Ref: {
+							auto &diag = netlist.add_diag(diag::RefUnsupported, loc);
+							diag << port.name;
+							continue;
+						}
+						}
+						ports.push_back(unconnected);
 						continue;
+					}
 					auto &expr = *conn->getExpression();
 					switch (port.direction) {
 					case ast::ArgumentDirection::InOut:
@@ -2622,17 +2652,16 @@ public:
 					dir = BackendGraphBuilderBase::PortConnection::kInput;
 					sig = netlist.eval(expr);
 					break;
-				case ast::ArgumentDirection::Out: {
-					dir = BackendGraphBuilderBase::PortConnection::kOutput;
+				case ast::ArgumentDirection::Out:
+				case ast::ArgumentDirection::InOut: {
+					dir = port.direction == ast::ArgumentDirection::InOut
+							? BackendGraphBuilderBase::PortConnection::kInOut
+							: BackendGraphBuilderBase::PortConnection::kOutput;
 					ast_invariant(expr, ast::AssignmentExpression::isKind(expr.kind));
 					auto &assign = expr.as<ast::AssignmentExpression>();
 					sig = netlist.eval.connection_lhs(assign);
 					break;
 				}
-				case ast::ArgumentDirection::InOut:
-					dir = BackendGraphBuilderBase::PortConnection::kInOut;
-					sig = netlist.eval(expr);
-					break;
 				default:
 					continue;
 				}

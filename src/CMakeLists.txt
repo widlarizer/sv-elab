@@ -11,16 +11,9 @@ else()
     set(LIBRARY_TYPE STATIC)
 endif()
 
-add_library(yosys-slang ${LIBRARY_TYPE}
-    yosys_plugin/abort_helpers.cc
-    yosys_plugin/backend_builder.cc
-    yosys_plugin/backend_builder.h
-    yosys_plugin/blackboxes.cc
-    yosys_plugin/cases.cc
-    yosys_plugin/cases.h
-    yosys_plugin/driver.cc
-    yosys_plugin/ir.cc
-    yosys_plugin/ir.h
+# The sources every backend compiles; tests/plain_backend compiles them
+# without Yosys
+set(SV_ELAB_COMMON_SOURCES
     addressing.cc
     async_pattern.cc
     async_pattern.h
@@ -38,6 +31,22 @@ add_library(yosys-slang ${LIBRARY_TYPE}
     sva.cc
     variables.cc
     variables.h
+)
+list(TRANSFORM SV_ELAB_COMMON_SOURCES PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/
+    OUTPUT_VARIABLE SV_ELAB_COMMON_PATHS)
+set(SV_ELAB_COMMON_PATHS ${SV_ELAB_COMMON_PATHS} PARENT_SCOPE)
+
+add_library(yosys-slang ${LIBRARY_TYPE}
+    yosys_plugin/abort_helpers.cc
+    yosys_plugin/backend_builder.cc
+    yosys_plugin/backend_builder.h
+    yosys_plugin/blackboxes.cc
+    yosys_plugin/cases.cc
+    yosys_plugin/cases.h
+    yosys_plugin/driver.cc
+    yosys_plugin/ir.cc
+    yosys_plugin/ir.h
+    ${SV_ELAB_COMMON_SOURCES}
     ${CMAKE_CURRENT_BINARY_DIR}/version.h
 )
 target_include_directories(yosys-slang PRIVATE
